@@ -1,0 +1,41 @@
+name: build-and-test
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-features
+      - run: cargo test --no-default-features
+      - run: cargo build --release --no-default-features
+      - name: C ABI smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cc -Wall -Wextra -Werror -Iinclude examples/c_api.c -Ltarget/release -llanczos_ultra -Wl,-rpath,"$PWD/target/release" -o /tmp/c-api
+          /tmp/c-api
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: C ABI smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cl /W4 /WX /Iinclude examples\c_api.c target\release\lanczos_ultra.dll.lib /Fe:target\release\c-api.exe
+          target\release\c-api.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lanczos-ultra-${{ runner.os }}
+          path: |
+            target/release/*.so
+            target/release/*.dll
+            target/release/*.dll.lib
+            include/lanczos_ultra.h
